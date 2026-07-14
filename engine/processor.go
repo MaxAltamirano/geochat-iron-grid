@@ -13,12 +13,19 @@ func IsAllowed(dest string) bool {
 
 // ProcessPacket ahora usa lógica inversa para asegurar la red
 func ProcessPacket(dest string, data string) (string, string) {
+    // 1. Vigilancia específica para Google (Permitido pero reportado)
+    if dest == "analytics.google.com" || dest == "google.com" {
+        BroadcastEvent("PISPEO_DETECTADO", dest)
+        return "ALLOWED", data
+    }
+
+    // 2. Bloqueo estricto para todo lo demás (Deny-All)
     if !IsAllowed(dest) { 
-        // Si no está autorizado, se activa la contrainteligencia
         noise := GenerateQuantumEntropy(32)
         BroadcastEvent("OCLUIDO", dest)
         return "OCLUIDO", noise
     }
-    // Si está en la lista blanca, dejamos pasar el flujo legítimo
+
+    // 3. Tráfico legítimo (Whitelist)
     return "ALLOWED", data
 }
