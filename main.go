@@ -7,15 +7,23 @@ import (
 	"github.com/geochat/iron-grid/engine"
 )
 
-func ReportarAlCore(accion string, detalle string) {
-	conn, err := net.Dial("unix", "/tmp/geochat_core.sock")
-	if err != nil {
-		return // Fallo silencioso, el Core no está listo
-	}
-	defer conn.Close()
+func ReportarAlCore(accion string, dest string) {
+    conn, err := net.Dial("unix", "/tmp/geochat_core.sock")
+    if err != nil {
+        return // Fallo silencioso, el Core no está listo
+    }
+    defer conn.Close()
 
-	message := fmt.Sprintf(`{"origen":"IRONGRID", "accion":"%s", "detalle":"%s"}`, accion, detalle)
-	conn.Write([]byte(message))
+    // Resolución de IP en tiempo real para el reporte de inteligencia
+    ips, _ := net.LookupIP(dest)
+    ipStr := "Desconocida"
+    if len(ips) > 0 {
+        ipStr = ips[0].String()
+    }
+
+    // JSON estructurado para el Core y la UI
+    message := fmt.Sprintf(`{"origen":"IRONGRID", "accion":"%s", "dominio":"%s", "ip":"%s"}`, accion, dest, ipStr)
+    conn.Write([]byte(message))
 }
 
 func main() {
