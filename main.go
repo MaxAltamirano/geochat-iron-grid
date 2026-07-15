@@ -8,22 +8,30 @@ import (
 )
 
 func ReportarAlCore(accion string, dest string) {
-    conn, err := net.Dial("unix", "/tmp/geochat_core.sock")
-    if err != nil {
-        return // Fallo silencioso, el Core no está listo
-    }
-    defer conn.Close()
+	// Resolución de IP en tiempo real
+	ips, _ := net.LookupIP(dest)
+	ipStr := "Desconocida"
+	if len(ips) > 0 {
+		ipStr = ips[0].String()
+	}
 
-    // Resolución de IP en tiempo real para el reporte de inteligencia
-    ips, _ := net.LookupIP(dest)
-    ipStr := "Desconocida"
-    if len(ips) > 0 {
-        ipStr = ips[0].String()
-    }
+	message := fmt.Sprintf(`{"origen":"IRONGRID", "accion":"%s", "dominio":"%s", "ip":"%s"}`, accion, dest, ipStr)
 
-    // JSON estructurado para el Core y la UI
-    message := fmt.Sprintf(`{"origen":"IRONGRID", "accion":"%s", "dominio":"%s", "ip":"%s"}`, accion, dest, ipStr)
-    conn.Write([]byte(message))
+	// Política de reintento: hasta 3 intentos con una pausa breve
+	for i := 0; i < 3; i++ {
+		conn, err := net.Dial("unix", "/tmp/geochat_core.sock")
+		if err == nil {
+			conn.Write([]byte(message))
+			conn.Close()
+			return // Éxito en la entrega
+		}
+		
+		// Espera exponencial antes del siguiente intento
+		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+	}
+	
+	// Si llega aquí, el Core realmente no está disponible
+	fmt.Printf("[IronGrid Bridge] Error crítico: Core no responde tras 3 intentos para %s\n", dest)
 }
 
 func main() {
