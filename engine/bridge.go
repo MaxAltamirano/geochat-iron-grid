@@ -10,22 +10,28 @@ const SOCKET_PATH = "/tmp/geochat_core.sock"
 
 // BroadcastEvent comunica eventos de seguridad al GeoChat-Core a través de un socket Unix.
 // Si el Core no está activo, el sistema continúa operando sin bloquearse.
+// Ahora apuntamos al socket del Buzón (SNC) en lugar de un Core independiente
+const BUZON_SOCKET_PATH = "/tmp/geochat_buzon.sock"
+
+// BroadcastEvent ahora inyecta los eventos de seguridad directamente en el Sistema Nervioso Central (Buzón)
 func BroadcastEvent(status string, target string) {
-	// Intentamos conectar con el socket del Core
-	conn, err := net.Dial("unix", SOCKET_PATH)
+	// Conectamos al socket del Buzón que gestiona el Radar y la Telemetría
+	conn, err := net.Dial("unix", BUZON_SOCKET_PATH)
 	if err != nil {
-		// Si el Core no está escuchando, registramos el evento en consola (modo fallback)
-		fmt.Printf("[IronGrid Bridge] Core no disponible, evento: %s -> %s\n", status, target)
+		// Fallback: Si el Buzón no responde, mantenemos el log local pero sin error crítico
+		fmt.Printf("[IronGrid SNC-Bridge] Buzón en silencio. Evento: %s | Target: %s\n", status, target)
 		return
 	}
 	defer conn.Close()
 
-	// Preparamos el mensaje en formato JSON para el Core
-	message := fmt.Sprintf(`{"status":"%s", "target":"%s"}`, status, target)
+	// Transformamos el evento de seguridad en un objeto de "Interferencia" para el Radar
+	// Esto hará que el Buzón lo procese como un objeto detectado en el espacio aéreo
+	message := fmt.Sprintf(`{"type":"INTERFERENCIA", "status":"%s", "target":"%s", "origen":"IRON_GRID"}`, status, target)
 	
-	// Enviamos el mensaje al socket
 	_, err = conn.Write([]byte(message))
 	if err != nil {
-		fmt.Printf("[IronGrid Bridge] Error al enviar mensaje: %v\n", err)
+		fmt.Printf("[IronGrid SNC-Bridge] Error de sincronización con el Buzón: %v\n", err)
+	} else {
+		fmt.Printf("[IronGrid SNC-Bridge] Evento inyectado en el Radar: %s\n", target)
 	}
 }
