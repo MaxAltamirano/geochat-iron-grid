@@ -1,0 +1,15 @@
+# Binarios
+geochat-core
+irongrid
+
+# Carpetas de compilación
+build/
+bin/
+dist/
+
+# Logs y temporales
+*.log
+*.tmp
+*.so
+*.o
+*.a
