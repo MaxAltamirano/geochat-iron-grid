@@ -2,66 +2,93 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"net"
+	"net/http"
+	"runtime/debug"
 	"time"
 	"github.com/geochat/iron-grid/engine"
 )
 
+// Interceptor de rastreo para autopsia profunda de llamadas de red
+func RastrearOrigenSalida(destino string) {
+	if destino == "analytics.google.com" || destino == "google.com" || destino == "api.facebook.com" || destino == "telemetry.windows.com" {
+		log.Printf("🚨 [AUTOPSIA DE RED] ¡Intento de salida detectado hacia: %s!", destino)
+		// Imprime en la terminal la pila de llamadas exacta (Stack Trace)
+		debug.PrintStack()
+	}
+}
+
 func ReportarAlCore(accion string, dest string) {
-	// Resolución de IP en tiempo real
 	ips, _ := net.LookupIP(dest)
 	ipStr := "Desconocida"
 	if len(ips) > 0 {
 		ipStr = ips[0].String()
 	}
 
+	// Estructura JSON precisa para que App.vue la interprete en syncPipeline
 	message := fmt.Sprintf(`{"origen":"IRONGRID", "accion":"%s", "dominio":"%s", "ip":"%s"}`, accion, dest, ipStr)
-
 	socketPath := "/tmp/geochat_core.sock"
 
-	// Bucle persistente de reintentos optimizado para la red soberana
 	for i := 1; i <= 5; i++ {
 		conn, err := net.Dial("unix", socketPath)
 		if err == nil {
 			conn.Write([]byte(message))
 			conn.Close()
-			return // Éxito total en la entrega
+			return
 		}
-		
-		// Pausa progresiva entre intentos
 		time.Sleep(time.Duration(i) * 200 * time.Millisecond)
 	}
 	
-	// Registro limpio sin errores críticos para no ensuciar la terminal
 	fmt.Printf("[IronGrid Bridge] ⏳ Core ocupado sincronizando, reintentando en segundo plano para: %s\n", dest)
 }
-func main() {
-	fmt.Println("🛡️ --- Iniciando Escudo IronGrid: Modo Watcher Continuo --- 🛡️")
 
-	// Canal de simulación de tráfico (esto en el futuro será tu captura de red)
+func main() {
+	fmt.Println("🛡️ --- Iniciando Escudo IronGrid: Modo Autopsia y Blindaje Real (:8080) --- 🛡️")
+
 	trafficChannel := make(chan string)
 
-	// Goroutine que simula la entrada de paquetes constantemente
+	// Servidor Proxy HTTP Real para interceptar el tráfico de Linux Mint
 	go func() {
-		packets := []string{"analytics.google.com", "api.facebook.com", "chat.geochat.org", "telemetry.windows.com"}
-		for {
-			for _, p := range packets {
-				trafficChannel <- p
-				time.Sleep(3 * time.Second) // Simula ráfagas de tráfico
+		proxyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			destino := r.Host
+			if destino == "" {
+				destino = r.URL.Host
 			}
+			
+			// Inyectamos el dominio detectado al canal
+			trafficChannel <- destino
+
+			// Evaluamos intrusos y disparamos autopsia si corresponde
+			RastrearOrigenSalida(destino)
+
+			if destino == "analytics.google.com" || destino == "google.com" || destino == "api.facebook.com" || destino == "telemetry.windows.com" {
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte("🚫 [IRONGRID SOBERANO]: Tráfico ocluido por blindaje de red."))
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, "✅ [PERMITIDO SOBERANO]")
+		})
+
+		fmt.Println("🌐 Escudo Proxy escuchando en 127.0.0.1:8080...")
+		if err := http.ListenAndServe("127.0.0.1:8080", proxyHandler); err != nil {
+			fmt.Printf("⚠️ Error en el Proxy de Red: %v\n", err)
 		}
 	}()
 
-	// Bucle infinito: El corazón del watcher
+	// Bucle principal procesando y reportando al Core
 	for dest := range trafficChannel {
 		status, result := engine.ProcessPacket(dest, "payload_privado")
 		
-		if status == "OCLUIDO" {
-			fmt.Printf("🚫 [BLOQUEO]: %s | Entropy: %s\n", dest, result)
-			// Reportamos al Core
+		if status == "OCLUIDO" || dest == "analytics.google.com" || dest == "google.com" || dest == "api.facebook.com" || dest == "telemetry.windows.com" {
+			fmt.Printf("🚫 [BLOQUEO Y AUTOPSIA]: %s | Entropy: %s\n", dest, result)
+			// Envía la alerta al Core para que Vue la reciba en syncPipeline
 			ReportarAlCore("OCLUIDO", dest)
 		} else {
-			fmt.Printf("✅ [PERMITIDO]: %s\n", dest)
+			fmt.Printf("✅ [PERMITIDO SOBERANO]: %s\n", dest)
 		}
 	}
 }
