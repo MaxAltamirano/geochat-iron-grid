@@ -1,25 +1,18 @@
 package main
 
 import (
+    "bufio"
     "fmt"
     "log"
     "net"
     "net/http"
-    "net/http/httputil"
-    "net/url"
+    "os"
     "runtime/debug"
     "time"
     "github.com/geochat/iron-grid/engine"
 )
 
-// Interceptor de rastreo para autopsia profunda de llamadas de red
-func RastrearOrigenSalida(destino string) {
-    if destino == "analytics.google.com" || destino == "google.com" || destino == "api.facebook.com" || destino == "telemetry.windows.com" {
-        log.Printf("🚨 [AUTOPSIA DE RED] ¡Intento de salida detectado hacia: %s!", destino)
-        debug.PrintStack()
-    }
-}
-
+// Reportar al núcleo vía Socket Unix con reintentos exponenciales
 func ReportarAlCore(accion string, dest string) {
     ips, _ := net.LookupIP(dest)
     ipStr := "Desconocida"
@@ -43,62 +36,99 @@ func ReportarAlCore(accion string, dest string) {
     fmt.Printf("[IronGrid Bridge] ⏳ Core ocupado sincronizando, reintentando en segundo plano para: %s\n", dest)
 }
 
-func main() {
-    fmt.Println("🛡️ --- Iniciando Escudo IronGrid: Gateway Inverso y Blindaje Real (:8080) --- 🛡️")
+// Receptor de alertas del escudo a través del Socket Unix
+func IniciarEscuchaUnixSocket() {
+    socketPath := "/tmp/geochat_core.sock"
 
-    // URL del núcleo real de GeoChat Core operando de manera interna en el puerto 10001
-    targetURL, err := url.Parse("http://127.0.0.1:10001")
-    if err != nil {
-        log.Fatalf("❌ Error al parsear URL del core interno: %v", err)
+    if _, err := os.Stat(socketPath); err == nil {
+        os.Remove(socketPath)
     }
-    proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-    trafficChannel := make(chan string, 100)
+    listener, err := net.Listen("unix", socketPath)
+    if err != nil {
+        fmt.Printf("❌ [CORE SOCKET]: Error al crear el socket en %s: %v\n", socketPath, err)
+        return
+    }
+    os.Chmod(socketPath, 0666)
 
-    // Goroutine procesadora de eventos de red y reportes al Core vía Socket UNIX
-    go func() {
-        for dest := range trafficChannel {
-            status, result := engine.ProcessPacket(dest, "payload_privado")
-            
-            if status == "OCLUIDO" || dest == "analytics.google.com" || dest == "google.com" || dest == "api.facebook.com" || dest == "telemetry.windows.com" {
-                fmt.Printf("🚫 [BLOQUEO Y AUTOPSIA]: %s | Entropy: %s\n", dest, result)
-                ReportarAlCore("OCLUIDO", dest)
-            } else {
-                fmt.Printf("✅ [PERMITIDO SOBERANO]: %s\n", dest)
-            }
+    fmt.Printf("🔌 [CORE SOCKET]: Escuchando canal de auditoría IronGrid en %s\n", socketPath)
+
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            continue
         }
-    }()
 
-    // Servidor Proxy HTTP / Gateway Inverso
-    proxyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        go func(c net.Conn) {
+            defer c.Close()
+            buf := bufio.NewReader(c)
+            line, err := buf.ReadString('\n')
+            if err != nil && err.Error() != "EOF" {
+                return
+            }
+            if line != "" {
+                fmt.Printf("📥 [EVENTO RECIBIDO DEL ESCUDO]: %s\n", line)
+            }
+        }(conn)
+    }
+}
+
+// Autopsia de intentos de salida prohibidos
+func RastrearOrigenSalida(destino string) {
+    if destino == "analytics.google.com" || destino == "google.com" || destino == "api.facebook.com" || destino == "telemetry.windows.com" {
+        log.Printf("🚨 [AUTOPSIA DE RED] ¡Intento de salida detectado hacia: %s!", destino)
+        debug.PrintStack()
+    }
+}
+
+func main() {
+    fmt.Println("🛡️ --- Iniciando Sistema Unificado: Core + Escudo IronGrid en :8080 --- 🛡️")
+
+    // 1. Levantamos el receptor de eventos Unix en segundo plano (Core)
+    go IniciarEscuchaUnixSocket()
+
+    // 2. Servidor HTTP unificado con el middleware IronGrid integrado
+    handlerUnificado := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         destino := r.Host
         if destino == "" {
             destino = r.URL.Host
         }
 
-        // Enviamos el destino al canal de auditoría no bloqueante
-        select {
-        case trafficChannel <- destino:
-        default:
-        }
-
-        // Evaluamos intrusos y disparamos autopsia si corresponde
+        // Auditar origen a través del paquete engine real
+        engine.AuditarOrigenLlamada(destino)
         RastrearOrigenSalida(destino)
 
-        // Blindaje estricto para dominios no deseados
-        if destino == "analytics.google.com" || destino == "google.com" || destino == "api.facebook.com" || destino == "telemetry.windows.com" {
+        // Procesamos el paquete a través de la política estricta de IronGrid (Default-Deny / Contrainteligencia)
+        status, payload := engine.ProcessPacket(destino, "payload_privado")
+
+        switch status {
+        case "OCLUIDO":
+            // Devolvemos el bloqueo estricto junto con el ruido de entropía cuántica generado
             w.WriteHeader(http.StatusForbidden)
-            w.Write([]byte("🚫 [IRONGRID SOBERANO]: Tráfico ocluido por blindaje de red."))
+            w.Write([]byte(fmt.Sprintf("🚫 [IRONGRID SOBERANO - OCLUIDO]: Tráfico no autorizado.\nEntropía Cuántica: %s", payload)))
+            return
+
+        case "NEGOCIACION_ACTIVA":
+            // Canal de contra-inteligencia: inyectamos el manifiesto de infraestructura de borde
+            w.WriteHeader(http.StatusTooManyRequests)
+            w.Write([]byte(fmt.Sprintf("🤝 [IRONGRID CONTRA-INTELIGENCIA]:\n%s", payload)))
+            return
+
+        case "ALLOWED":
+            // Tránsito libre y soberano: inyectamos cabecera y derivamos al multiplexor del Core
+            r.Header.Set("X-IronGrid-Verified", "Sovereign-Node-Avellaneda")
+            http.DefaultServeMux.ServeHTTP(w, r)
+            return
+
+        default:
+            w.WriteHeader(http.StatusForbidden)
+            w.Write([]byte("🚫 [IRONGRID]: Acceso denegado por política de red."))
             return
         }
-
-        // Inyectamos cabecera soberana de certificación y reenviamos al Core real (:10001)
-        r.Header.Set("X-IronGrid-Verified", "Sovereign-Node-Avellaneda")
-        proxy.ServeHTTP(w, r)
     })
 
-    fmt.Println("🌐 Escudo Gateway escuchando en 127.0.0.1:8080 (Derivando tráfico legítimo a Core :10001)...")
-    if err := http.ListenAndServe("127.0.0.1:8080", proxyHandler); err != nil {
-        fmt.Printf("⚠️ Error en el Gateway de Red: %v\n", err)
+    fmt.Println("🌐 Nodo Soberano escuchando unificado en 127.0.0.1:8080...")
+    if err := http.ListenAndServe("127.0.0.1:8080", handlerUnificado); err != nil {
+        log.Fatalf("⚠️ Error crítico en el servidor unificado: %v", err)
     }
 }
