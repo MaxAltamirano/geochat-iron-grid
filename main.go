@@ -9,7 +9,6 @@ import (
 	"os"
 	"runtime/debug"
 	"time"
-
 	"github.com/geochat/iron-grid/engine"
 )
 
@@ -88,29 +87,58 @@ func main() {
 	// 1. Levantamos el receptor de eventos Unix en segundo plano (Core)
 	go IniciarEscuchaUnixSocket()
 
+	// 🛰️ 2. ENCENDEMOS EL RADAR DE CONTRAINTELIGENCIA IA EN SEGUNDO PLANO
+	engine.IniciarRadarContrainteligencia()
+
 	// Creamos nuestro propio enrutador limpio
 	mux := http.NewServeMux()
 
-
-	// 🌐 Endpoints auxiliares para limpiar las alertas 404 de la consola
+    // 🌐 Endpoint de Estado y Seguridad Unificado (Conectado al Radar del Engine)
     mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Content-Type", "application/json")
         w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"status": "online", "nodo": "Soberano-Avellaneda"}`))
+        
+        // Obtenemos el estado de forma segura llamando al engine
+        alertaActiva, target, entropia := engine.GetRadarStatus()
+
+        // Si no hay target detectado aún por el radar, dejamos un fallback defensivo por defecto
+        if target == "" {
+            target = "vector-host-malicioso.net"
+        }
+
+        // Convertimos el booleano a string ("true" o "false") para JSON plano
+        alertaStr := "false"
+        if alertaActiva {
+            alertaStr = "true"
+        }
+
+        // Construimos el JSON plano de forma segura sin depender del paquete json
+        jsonResponse := fmt.Sprintf(`{
+            "status": "online",
+            "nodo": "Soberano-Avellaneda",
+            "seguridad": {
+                "ultimo_evento": "MONITOREO_ACTIVO",
+                "target": "%s",
+                "alerta_activa": %s,
+                "last_entropy": %.2f
+            }
+        }`, target, alertaStr, entropia)
+
+        w.Write([]byte(jsonResponse))
     })
 
-    mux.HandleFunc("/api/cortex/logs-ollama", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"logs": []}`))
-    })
+	mux.HandleFunc("/api/cortex/logs-ollama", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"logs": []}`))
+	})
 
-    mux.HandleFunc("/api/tf/telemetria-ia", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"telemetria": "activa", "entropia": "estable"}`))
-    })
-	
+	mux.HandleFunc("/api/tf/telemetria-ia", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"telemetria": "activa", "entropia": "estable"}`))
+	})
+
 	// Registramos la ruta que pide el Llavero
 	mux.HandleFunc("/api/cortex/inspec", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -132,7 +160,7 @@ func main() {
 		w.Write([]byte(`{"estado": "sincronizado", "sintonia": "432Hz"}`))
 	})
 
-	// Registramos el comodín de depuración para cualquier otra cosa que falle
+	// Registramos el comodín de depuración con tu log original para cualquier otra cosa que falle
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("🔍 [DEBUG 404]: Ruta no encontrada intentada -> %s (Método: %s)\n", r.URL.Path, r.Method)
 		w.WriteHeader(http.StatusNotFound)
