@@ -3,13 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/geochat/iron-grid/engine"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
 	"time"
+
+	"github.com/geochat/iron-grid/engine"
 )
 
 // Reportar al núcleo vía Socket Unix con reintentos exponenciales
@@ -82,66 +83,80 @@ func RastrearOrigenSalida(destino string) {
 }
 
 func main() {
-    fmt.Println("🛡️ --- Iniciando Sistema Unificado: Core + Escudo IronGrid en :8080 --- 🛡️")
+	fmt.Println("🛡️ --- Iniciando Sistema Unificado: Core + Escudo IronGrid en :8080 --- 🛡️")
 
-    // 1. Levantamos el receptor de eventos Unix en segundo plano (Core)
-    go IniciarEscuchaUnixSocket()
+	// 1. Levantamos el receptor de eventos Unix en segundo plano (Core)
+	go IniciarEscuchaUnixSocket()
 
-    // Creamos nuestro propio enrutador limpio
-    mux := http.NewServeMux()
+	// Creamos nuestro propio enrutador limpio
+	mux := http.NewServeMux()
 
-    // Registramos la ruta que pide el Llavero
-    mux.HandleFunc("/api/cortex/inspec", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"status": "OK", "cortex": "activo"}`))
-    })
+	// Registramos la ruta que pide el Llavero
+	mux.HandleFunc("/api/cortex/inspec", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "OK", "cortex": "activo"}`))
+	})
 
-    // Registramos el comodín de depuración para cualquier otra cosa que falle
-    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Printf("🔍 [DEBUG 404]: Ruta no encontrada intentada -> %s (Método: %s)\n", r.URL.Path, r.Method)
-        w.WriteHeader(http.StatusNotFound)
-        w.Write([]byte(`{"error": "Ruta no encontrada en el Córtex"}`))
-    })
+	// 🛡️ Agregamos la ruta del reporte directamente al mux de la Iron Grid
+	mux.HandleFunc("/api/cortex/reporte", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
+			return
+		}
 
-    // 2. Servidor HTTP unificado con el middleware IronGrid integrado
-    handlerUnificado := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        destino := r.Host
-        if destino == "" {
-            destino = r.URL.Host
-        }
+		fmt.Println("🧠 [IRON-GRID]: Pulso de reporte soberano interceptado y aceptado.")
 
-        engine.AuditarOrigenLlamada(destino)
-        RastrearOrigenSalida(destino)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"estado": "sincronizado", "sintonia": "432Hz"}`))
+	})
 
-        status, payload := engine.ProcessPacket(destino, "payload_privado")
+	// Registramos el comodín de depuración para cualquier otra cosa que falle
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("🔍 [DEBUG 404]: Ruta no encontrada intentada -> %s (Método: %s)\n", r.URL.Path, r.Method)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Ruta no encontrada en el Córtex"}`))
+	})
 
-        switch status {
-        case "OCLUIDO":
-            w.WriteHeader(http.StatusForbidden)
-            w.Write([]byte(fmt.Sprintf("🚫 [IRONGRID SOBERANO - OCLUIDO]: Tráfico no autorizado.\nEntropía Cuántica: %s", payload)))
-            return
+	// 2. Servidor HTTP unificado con el middleware IronGrid integrado
+	handlerUnificado := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destino := r.Host
+		if destino == "" {
+			destino = r.URL.Host
+		}
 
-        case "NEGOCIACION_ACTIVA":
-            w.WriteHeader(http.StatusTooManyRequests)
-            w.Write([]byte(fmt.Sprintf("🤝 [IRONGRID CONTRA-INTELIGENCIA]:\n%s", payload)))
-            return
+		engine.AuditarOrigenLlamada(destino)
+		RastrearOrigenSalida(destino)
 
-        case "ALLOWED":
-            // Tránsito libre: derivamos a nuestro mux propio (no al DefaultServeMux)
-            r.Header.Set("X-IronGrid-Verified", "Sovereign-Node-Avellaneda")
-            mux.ServeHTTP(w, r)
-            return
+		status, payload := engine.ProcessPacket(destino, "payload_privado")
 
-        default:
-            w.WriteHeader(http.StatusForbidden)
-            w.Write([]byte("🚫 [IRONGRID]: Acceso denegado por política de red."))
-            return
-        }
-    })
+		switch status {
+		case "OCLUIDO":
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(fmt.Sprintf("🚫 [IRONGRID SOBERANO - OCLUIDO]: Tráfico no autorizado.\nEntropía Cuántica: %s", payload)))
+			return
 
-    fmt.Println("🌐 Nodo Soberano escuchando unificado en 127.0.0.1:8080...")
-    if err := http.ListenAndServe("127.0.0.1:8080", handlerUnificado); err != nil {
-        log.Fatalf("⚠️ Error crítico en el servidor unificado: %v", err)
-    }
+		case "NEGOCIACION_ACTIVA":
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(fmt.Sprintf("🤝 [IRONGRID CONTRA-INTELIGENCIA]:\n%s", payload)))
+			return
+
+		case "ALLOWED":
+			// Tránsito libre: derivamos a nuestro mux propio (no al DefaultServeMux)
+			r.Header.Set("X-IronGrid-Verified", "Sovereign-Node-Avellaneda")
+			mux.ServeHTTP(w, r)
+			return
+
+		default:
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("🚫 [IRONGRID]: Acceso denegado por política de red."))
+			return
+		}
+	})
+
+	fmt.Println("🌐 Nodo Soberano escuchando unificado en 127.0.0.1:8080...")
+	if err := http.ListenAndServe("127.0.0.1:8080", handlerUnificado); err != nil {
+		log.Fatalf("⚠️ Error crítico en el servidor unificado: %v", err)
+	}
 }
