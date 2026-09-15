@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"time"
 	"github.com/geochat/iron-grid/engine"
+	"encoding/json"
 )
 
 // Reportar al núcleo vía Socket Unix con reintentos exponenciales
@@ -202,6 +203,15 @@ func main() {
 			return
 		}
 	})
+
+	// 📭 Agregamos el buzón de salida soberano al mux de Iron Grid
+    handleBuzon := func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(map[string]interface{}{"items": []interface{}{}, "status": "operativo"})
+    }
+
+    mux.HandleFunc("/api/buzon/salida", handleBuzon)
+    mux.HandleFunc("/api/buzon/salida/", handleBuzon)
 
 	fmt.Println("🌐 Nodo Soberano escuchando unificado en 127.0.0.1:8080...")
 	if err := http.ListenAndServe("127.0.0.1:8080", handlerUnificado); err != nil {
